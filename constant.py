@@ -1,3 +1,6 @@
+
+os.setenv['REDDIT_USERNAME'] = 'MapleStaples72'
+
 # login credentials
 USERNAME = 'MapleStaples72'
 PASSWORD = 'Gogosing123'
