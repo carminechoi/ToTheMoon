@@ -24,40 +24,44 @@ for i in range(len(crypto_key_pairs)):
     crypto_keywords.append(list(crypto_key_pairs.values())[i])
 
 
+def news_request_post(news_output, crypto):
+    #create empty dicts in the news output
+    news_output["{0}".format(crypto)] = {'description': [], 'title': []}
+
+    #configure the fetch request and select date range. Increase date range by adjusting timedelta(days=1)
+    url = "https://contextualwebsearch-websearch-v1.p.rapidapi.com/api/search/NewsSearchAPI"
+    querystring = {"q":str(crypto),"pageNumber":"1","pageSize":"30","autoCorrect":"true","fromPublishedDate":date_since,"toPublishedDate":"null"}
+    headers = {
+        'x-rapidapi-key': websearch_key,
+        'x-rapidapi-host': "contextualwebsearch-websearch-v1.p.rapidapi.com"
+        }
+
+    #get the raw response
+    response = requests.request("GET", url, headers=headers, params=querystring)
+
+    # convert response to text format
+    result = json.loads(response.text)
+
+    #store each headline and description in the dicts above
+    for news in result['value']:
+        news_output[crypto]["description"].append(news['description'])
+        news_output[crypto]["title"].append(news['title'])
+        
+
 # Search the web for news unsing the websearch api, send a request for each crypto in cryprocurrencies
 def get_news_headlines():
     '''Search the web for news headlines based the keywords in the global variable'''
     news_output = {}
 
-    #TO DO - looping through keywords created odd looking dicts. Gotta loop through keys instead
-    for crypto in crypto_keywords:
-
-        #create empty dicts in the news output
-        news_output["{0}".format(crypto)] = {'description': [], 'title': []}
-
-        #configure the fetch request and select date range. Increase date range by adjusting timedelta(days=1)
-        url = "https://contextualwebsearch-websearch-v1.p.rapidapi.com/api/search/NewsSearchAPI"
-        querystring = {"q":str(crypto),"pageNumber":"1","pageSize":"30","autoCorrect":"true","fromPublishedDate":date_since,"toPublishedDate":"null"}
-        headers = {
-            'x-rapidapi-key': websearch_key,
-            'x-rapidapi-host': "contextualwebsearch-websearch-v1.p.rapidapi.com"
-            }
-
-        #get the raw response
-        response = requests.request("GET", url, headers=headers, params=querystring)
-
-        # convert response to text format
-        result = json.loads(response.text)
-
-        #store each headline and description in the dicts above
-        for news in result['value']:
-            news_output[crypto]["description"].append(news['description'])
-            news_output[crypto]["title"].append(news['title'])
-
+    threads=[]
+    with ThreadPoolExecutor(max_workers=20) as executor:
+        res = [executor.submit(news_request_post, news_output, crypto) for crypto in crypto_keywords] 
+        wait(res)     
+    
     return news_output
 
 
-def request_post(news_output, crypto, title):
+def sentiment_request_post(news_output, crypto, title):
     # remove all non alphanumeric characters from payload
     titles = re.sub('[^A-Za-z0-9]+', ' ', title)
 
@@ -103,7 +107,7 @@ def analyze_headlines():
         if len(news_output[crypto]['description']) > 0:
             threads=[]
             with ThreadPoolExecutor(max_workers=20) as executor:
-                res = [executor.submit(request_post, news_output, crypto, title) for title in news_output[crypto]['title']] 
+                res = [executor.submit(sentiment_request_post, news_output, crypto, title) for title in news_output[crypto]['title']] 
                 wait(res)     
 
     return news_output
