@@ -1,5 +1,6 @@
 from datetime import datetime, date, timedelta
 from decouple import config
+from concurrent.futures import ThreadPoolExecutor, as_completed, wait
 import requests, json, re, os
 
 #sentiment and webseaarch keys - you need to create yours
@@ -56,6 +57,39 @@ def get_news_headlines():
     return news_output
 
 
+def request_post(news_output, crypto, title):
+    # remove all non alphanumeric characters from payload
+    titles = re.sub('[^A-Za-z0-9]+', ' ', title)
+
+    import http.client
+    conn = http.client.HTTPSConnection('text-sentiment.p.rapidapi.com')
+
+    #format and sent the request
+    payload = 'text='+titles
+    headers = {
+        'content-type': 'application/x-www-form-urlencoded',
+        'x-rapidapi-key': sentiment_key,
+        'x-rapidapi-host': 'text-sentiment.p.rapidapi.com'
+        }
+    conn.request("POST", "/analyze", payload, headers)
+
+    #get the response and format it
+    res = conn.getresponse()
+    data = res.read()
+    title_sentiment = json.loads(data)
+    
+    #assign each positive, neutral and negative count to another list in the news output dict
+    if not isinstance(title_sentiment, int):
+        if title_sentiment['pos'] == 1:
+            news_output[crypto]['sentiment']['pos'].append(title_sentiment['pos'])
+        elif title_sentiment['mid'] == 1:
+            news_output[crypto]['sentiment']['mid'].append(title_sentiment['mid'])
+        elif title_sentiment['neg'] == 1:
+            news_output[crypto]['sentiment']['neg'].append(title_sentiment['neg'])
+        else:
+            print(f'Sentiment not found for {crypto}')
+
+
 def analyze_headlines():
     '''Analyse each headline pulled trhough the API for each crypto'''
     news_output = get_news_headlines()
@@ -67,38 +101,10 @@ def analyze_headlines():
 
         # analyse the description sentiment for each crypto news gathered
         if len(news_output[crypto]['description']) > 0:
-            for title in news_output[crypto]['title']:
-
-                # remove all non alphanumeric characters from payload
-                titles = re.sub('[^A-Za-z0-9]+', ' ', title)
-
-                import http.client
-                conn = http.client.HTTPSConnection('text-sentiment.p.rapidapi.com')
-
-                #format and sent the request
-                payload = 'text='+titles
-                headers = {
-                    'content-type': 'application/x-www-form-urlencoded',
-                    'x-rapidapi-key': sentiment_key,
-                    'x-rapidapi-host': 'text-sentiment.p.rapidapi.com'
-                    }
-                conn.request("POST", "/analyze", payload, headers)
-
-                #get the response and format it
-                res = conn.getresponse()
-                data = res.read()
-                title_sentiment = json.loads(data)
-
-                #assign each positive, neutral and negative count to another list in the news output dict
-                if not isinstance(title_sentiment, int):
-                    if title_sentiment['pos'] == 1:
-                        news_output[crypto]['sentiment']['pos'].append(title_sentiment['pos'])
-                    elif title_sentiment['mid'] == 1:
-                        news_output[crypto]['sentiment']['mid'].append(title_sentiment['mid'])
-                    elif title_sentiment['neg'] == 1:
-                        news_output[crypto]['sentiment']['neg'].append(title_sentiment['neg'])
-                    else:
-                        print(f'Sentiment not found for {crypto}')
+            threads=[]
+            with ThreadPoolExecutor(max_workers=20) as executor:
+                res = [executor.submit(request_post, news_output, crypto, title) for title in news_output[crypto]['title']] 
+                wait(res)     
 
     return news_output
 
@@ -122,9 +128,4 @@ def calc_sentiment():
 
     return news_output
 
-# TO DO - If integrated with an exhange, add weight logic to avid placing a trade
-# when only 1 article is found and the sentiment is positive.
-
-#call the function
-#Delete Call if adding trading logic. Assign the function to a variable instead.
 calc_sentiment()
